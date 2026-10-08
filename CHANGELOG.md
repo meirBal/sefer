@@ -1,3 +1,4 @@
+<!-- v1.x was developed inside meirBal/home-app (book/); its rollback lines there read "APP=book …" — here use scripts/rollback.sh X.Y.Z -->
 ## 1.3.0 — 2026-10-09
 - Installs as its own app (own name, icon and home-screen entry) alongside the home-management app
 - previous: v1.2.3 (rollback: APP=book scripts/rollback.sh 1.2.3)

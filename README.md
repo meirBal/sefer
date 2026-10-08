@@ -1,6 +1,6 @@
-# עימוד ספר — כתב אשורי (book/)
+# עימוד ספר — כתב אשורי
 
-Word → ספר מעומד בכתב תורה, לשמירה ב-Word או PDF. רץ כולו בדפדפן (ללא שרת, ללא עלות): `https://meirbal.github.io/home-app/book/`
+Word → ספר מעומד בכתב תורה, לשמירה ב-Word או PDF. רץ כולו בדפדפן (ללא שרת, ללא עלות): `https://meirbal.github.io/sefer/`
 
 ## זרימה
 קובץ ‎.docx‎ → תצוגת מקור → **בצע** → עמודים בגודל A5/A4, טקסט עיקרי בגודל הנבחר וכל השאר בפרופורציה, פונט ובחירת ניקוד/טעמים, כותרת רצה ומספור, השלמת עמודים לכפולה → שמירה (קובץ אחד / כל X עמודים / X קבצים / טווחים).
@@ -19,6 +19,7 @@ Word → ספר מעומד בכתב תורה, לשמירה ב-Word או PDF. ר�
 | `css/book.css` | ממשק + גאומטריית הדף (משותפת למסך, למדידה ולהדפסה) |
 | `vendor/` | JSZip 3.10.1 · פונט Frank Ruhl Libre (OFL) מובנה — עובד בלי אינטרנט |
 | `css/fonts.css` | הגדרת הפונטים המובנים |
+| `scripts/` | release / rollback |
 | `tests/` | `node book/tests/text.test.mjs` · `node book/tests/smoke.mjs` (דפדפן + בדיקת עימוד Word מול LibreOffice) |
 
 ## עקרון התאמה ל-Word
@@ -28,4 +29,4 @@ Word → ספר מעומד בכתב תורה, לשמירה ב-Word או PDF. ר�
 פונט מותקן במחשב (למשל Guttman Stam שמגיע עם Office) — לבחור מהרשימה או "אחר" ולהקליד את השם כמו בוורד. אפשר גם להעלות קובץ פונט לתצוגה. חינמי: Stam Ashkenaz CLM (Culmus).
 
 ## גרסאות
-`APP=book scripts/release.sh 1.0.1 "מה השתנה"` · חזרה: `APP=book scripts/rollback.sh 1.0.0` (נקודות שחזור: ענפי `release/book-vX.Y.Z`).
+`scripts/release.sh 2.0.1 "מה השתנה"` · חזרה: `scripts/rollback.sh 1.3.0` (נקודות שחזור: ענפי `release/vX.Y.Z`; הגרסאות עד 1.3.0 עברו מ-home-app עם כל ההיסטוריה).
