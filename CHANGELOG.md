@@ -1,3 +1,7 @@
+## 2.0.0 — 2026-10-09
+- Moved to its own address https://meirbal.github.io/sefer/ (own repo, full history and restore points kept); no longer shares anything with the home-management app
+- previous: v1.3.0 (rollback: scripts/rollback.sh 1.3.0)
+
 <!-- v1.x was developed inside meirBal/home-app (book/); its rollback lines there read "APP=book …" — here use scripts/rollback.sh X.Y.Z -->
 ## 1.3.0 — 2026-10-09
 - Installs as its own app (own name, icon and home-screen entry) alongside the home-management app
