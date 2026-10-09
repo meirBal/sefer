@@ -1,3 +1,7 @@
+## 2.2.1 — 2026-10-09
+- Missing-font guidance corrected: Office fonts are used on the computer they came with and travel inside the Word/PDF files you make; copying the font file to other devices needs an extended licence
+- previous: v2.2.0 (rollback: scripts/rollback.sh 2.2.0)
+
 ## 2.2.0 — 2026-10-09
 - Fonts: import Guttman Stam straight from the computer (Chrome/Edge); added font files keep their real Word name; the font is embedded inside exported Word files (when its licence allows) so Word shows it on devices without it — e.g. a phone; clear steps when the font is missing
 - previous: v2.1.0 (rollback: scripts/rollback.sh 2.1.0)
