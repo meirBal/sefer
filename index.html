@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#7a4b1f">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/book.css">
 <link rel="stylesheet" href="css/fonts.css">
 <script src="vendor/jszip.min.js" defer></script>
@@ -32,7 +33,8 @@
     <label>גודל טקסט עיקרי (pt) <input data-k="bodyPt" type="number" min="8" max="48" step="0.5"></label>
     <label>פונט <select data-k="font" id="font"></select></label>
     <div id="customBox" hidden><label>שם הפונט (כמו בוורד) <input data-k="fontName" placeholder="לדוגמה: Guttman Stam" maxlength="60"></label></div>
-    <label class="btn small">📁 הוספת קובץ פונט (נשמר באפליקציה)<input id="fontFile" type="file" accept=".ttf,.otf,.woff,.woff2" hidden></label>
+    <div class="row"><label class="btn small">📁 הוספת קובץ פונט (נשמר באפליקציה)<input id="fontFile" type="file" accept=".ttf,.otf,.ttc,.woff,.woff2,font/*,application/octet-stream" hidden></label>
+      <button type="button" id="fontLocal" class="small" hidden>🔎 ייבוא גוטמן סת"ם מהמחשב</button></div>
     <label>ניקוד וטעמים <select data-k="marks"><option value="all">להשאיר הכול</option><option value="niqqud">ניקוד בלי טעמים</option><option value="none">בלי ניקוד וטעמים</option></select></label>
     <label>מספר עמוד <select data-k="numPos"><option value="to">למעלה, בצד החיצוני (מומלץ לספר)</option><option value="tl">למעלה משמאל</option>
       <option value="bo">למטה, בצד החיצוני</option><option value="bc">למטה במרכז</option><option value="bl">למטה משמאל</option><option value="br">למטה מימין</option>
@@ -139,6 +141,7 @@
 <dialog id="fn"><form method="dialog">
   <h3>הוספת פונט</h3>
   <label>שם הפונט (כמו שמופיע בוורד) <input id="fnName" maxlength="60" required></label>
+  <p id="fnNote" class="warn"></p>
   <div class="row end"><button value="cancel" formnovalidate>ביטול</button><button value="ok" class="primary">הוספה</button></div>
 </form></dialog>
 

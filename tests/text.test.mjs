@@ -37,3 +37,21 @@ t('chapter split: front matter joins first file, n per file', () => {
   assert.deepEqual(chapterPlan(20, [3, 8, 15], 2), [[1, 14, 0], [15, 20, 2]]);
   assert.throws(() => chapterPlan(20, [], 1));
 });
+import { fontInfo, obfuscate } from '../js/fontfile.js';
+import fs from 'node:fs';
+const FT = '/tmp/claude-0/ft';
+if (fs.existsSync(`${FT}/TestEmbed-s.ttf`)) t('font file: real family name + embedding licence', () => {
+  const read = (n) => fs.readFileSync(`${FT}/${n}`).buffer.slice(0);
+  assert.deepEqual(fontInfo(read('TestEmbed-s.ttf')), { family: 'TestEmbed Serif', embed: 'yes', why: '' });
+  assert.equal(fontInfo(new Uint8Array(read('TestEmbed-s.ttf')).slice(0, 300)), null);   // truncated file: no throw
+  assert.equal(fontInfo(read('Restricted-s.ttf')).embed, 'no');
+  assert.equal(fontInfo(new TextEncoder().encode('wOF2xxxxxxxxxxxx').buffer), null);
+});
+t('docx font obfuscation is reversible with the GUID key', () => {
+  const src = Uint8Array.from({ length: 64 }, (_, i) => i), { data, key } = obfuscate(src);
+  const hex = key.replace(/[{}-]/g, ''), k = Array.from({ length: 16 }, (_, i) => parseInt(hex.substr(30 - i * 2, 2), 16));
+  assert.match(key, /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/);
+  assert.notDeepEqual([...data.slice(0, 32)], [...src.slice(0, 32)]);
+  assert.deepEqual([...data.slice(0, 32)].map((b, i) => b ^ k[i % 16]), [...src.slice(0, 32)]);
+  assert.deepEqual([...data.slice(32)], [...src.slice(32)]);
+});

@@ -249,6 +249,27 @@ await step('PDF with stretched letters', async () => {
   await d.saveAs(path.join(OUT, 'stretch.pdf'));
   await page.click('#pvClose');
 });
+await step('add a font file: Word name read from the file, kept in the app, embedded in the Word file', async () => {
+  const ttf = '/tmp/claude-0/ft/TestEmbed-s.ttf';
+  if (!fs.existsSync(ttf)) return console.log('  (skipped: no test font)');
+  await page.setInputFiles('#fontFile', ttf);
+  await page.waitForFunction(() => document.querySelector('#fn').open);
+  if ((await page.inputValue('#fnName')) !== 'TestEmbed Serif') throw new Error('name from file: ' + await page.inputValue('#fnName'));
+  await page.click('#fn button[value="ok"]');
+  await page.waitForFunction(() => document.querySelector('[data-k="font"]').value === 'TestEmbed Serif' && /TestEmbed/.test(getComputedStyle(document.querySelector('#result')).getPropertyValue('--font')), null, { timeout: 15000 });
+  if (!(await page.locator('#fontWarn').isHidden())) throw new Error('font reported missing');
+  await page.reload();                                       // still there after reopening the app
+  if (!/✓|📁/.test(await page.locator('[data-k="font"] option[value="TestEmbed Serif"]').textContent())) throw new Error('font not kept');
+  await page.setInputFiles('#file', docx); await page.waitForFunction(() => !document.querySelector('#run').disabled);
+  await page.click('#run'); await page.waitForFunction(() => document.querySelectorAll('#result .page').length > 3, null, { timeout: 20000 });
+  await page.click('#save'); await page.selectOption('#exMode', 'one');
+  if (!/יוטמע/.test(await page.textContent('#exFontWarn'))) throw new Error('embed note');
+  const [d] = await Promise.all([page.waitForEvent('download'), page.click('#exWord')]);
+  await d.saveAs(path.join(OUT, 'embed.docx'));
+  await page.click('#ex button[value="close"]');
+  const z = await (await import('jszip')).default.loadAsync(fs.readFileSync(path.join(OUT, 'embed.docx')));
+  if (!z.file('word/fonts/font1.odttf') || !/embedRegular/.test(await z.file('word/fontTable.xml').async('string'))) throw new Error('font not embedded');
+});
 await page.screenshot({ path: path.join(OUT, 'app.png') });
 fs.writeFileSync(path.join(OUT, 'pages.txt'), String(pages));
 await browser.close(); srv.close();

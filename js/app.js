@@ -5,6 +5,7 @@ import { geom, prepare, paginate, compose, remap, pageHTML, headHTML, pageVars }
 import { buildDocx, download, printPages } from './export.js';
 import { units, makePdf, fontCss, testUnits } from './print.js';
 import { stretchPage, stretchHTML } from './stretch.js';
+import { fontInfo as fileInfo, canQueryLocal, localFonts, dataUrlBytes } from './fontfile.js';
 import { splitPlan, chapterPlan, esc } from './text.js';
 import { find, mark, clear, queryLength } from './search.js';
 
@@ -59,11 +60,12 @@ const schedule = () => { clearTimeout(timer); timer = setTimeout(run, 400); };
 
 // ----- [2] FONTS: bundled / web fonts, installed fonts by name, or font files added once and kept in the app -----
 const cssLoaded = new Set();
-const cleanName = (n) => String(n || '').replace(/["'\\<>;{}]/g, '').trim(); // goes into CSS and Word XML
+const cleanName = (n) => String(n || '').replace(/["'\\<>;{}\x00-\x1f]/g, '').trim(); // goes into CSS and Word XML
 const fontInfo = (name) => FONTS.find((f) => f.name === name);
-function fillFonts() {
-  const saved = Object.keys(fonts).map((n) => ({ name: n, label: '📁 ' + n }));
-  $('font').innerHTML = [...saved, ...FONTS].map((f) => `<option value="${esc(f.name)}">${esc(f.label)}</option>`).join('');
+function fillFonts() {   // catalog fonts already kept in the app are marked ✓; other added fonts are listed with 📁
+  const catalog = FONTS.map((f) => ({ ...f, label: fonts[f.name] ? `✓ ${f.label} — שמור באפליקציה` : f.label }));
+  const extra = Object.keys(fonts).filter((n) => !FONTS.some((f) => f.name === n)).map((n) => ({ name: n, label: '📁 ' + n }));
+  $('font').innerHTML = [...extra, ...catalog].map((f) => `<option value="${esc(f.name)}">${esc(f.label)}</option>`).join('');
   $('font').value = st.s.font;
 }
 async function loadSaved(name) {           // added fonts load only when used (they can be large)
@@ -82,33 +84,79 @@ async function useFont(s) {
   await document.fonts.load(`${s.bodyPt}pt "${s.fontFamily}"`, 'אבג').catch(() => {});
   const found = available(s.fontFamily);
   $('fontWarn').hidden = found;
-  $('fontWarn').textContent = found ? '' : `הפונט "${s.fontFamily}" לא נמצא — מוצג פונט חלופי. הוסיפו את קובץ הפונט (📁) או בחרו פונט אחר.`;
+  $('fontWarn').innerHTML = found ? '' : `הפונט "${esc(s.fontFamily)}" לא נמצא במכשיר הזה — מוצג פונט חלופי.` +
+    (canQueryLocal() ? ' <button type="button" class="small" data-local>🔎 ייבוא מהמחשב</button>' : '') +
+    '<br>להעברה לטלפון: במחשב עם Office פותחים את התיקייה <b dir="ltr">C:\\Windows\\Fonts</b>, מחפשים <b>Guttman</b>, גוררים את הפונט לשולחן העבודה ' +
+    'ושולחים את הקובץ לעצמכם (וואטסאפ / מייל). כאן: "📁 הוספת קובץ פונט" ובוחרים אותו — הוא נשמר באפליקציה, ויוטמע גם בקבצי ה-Word וה-PDF.';
 }
 function available(name) {   // a missing font measures exactly like the fallback
   const c = document.createElement('canvas').getContext('2d'), t = 'אבגדהשת abc';
   return ['serif', 'monospace'].some((fb) => { c.font = `40px ${fb}`; const a = c.measureText(t).width; c.font = `40px "${name}", ${fb}`; return c.measureText(t).width !== a; });
 }
+const toDataUrl = (blob) => new Promise((r, j) => { const f = new FileReader(); f.onload = () => r(f.result); f.onerror = j; f.readAsDataURL(blob); });
+// Keep a font in the app under the name Word knows it by; returns false when storage is full (font works until reload).
+async function keepFont(name, url, choose = true) {
+  document.fonts.add(await new FontFace(name, `url(${url})`).load());
+  fonts[name] = url; delete fontCache[name];
+  const kept = save('book.fonts', fonts);
+  if (!kept) delete fonts[name];
+  if (choose) { st.s.font = name; persist(); }
+  fillFonts(); syncVisibility();
+  if (choose && st.L) schedule();
+  return kept;
+}
 let fontFile = null;
-$('fontFile').addEventListener('change', (e) => {
+$('fontFile').addEventListener('change', async (e) => {
   fontFile = e.target.files[0]; e.target.value = ''; if (!fontFile) return;
-  $('fnName').value = fontFile.name.replace(/\.\w+$/, '');
+  const info = fileInfo(await fontFile.arrayBuffer().catch(() => new ArrayBuffer(0)));
+  $('fnName').value = info?.family || fontFile.name.replace(/\.\w+$/, '');   // the font's own name = the name Word uses
+  $('fnNote').textContent = embedNote(info);
   $('fn').returnValue = ''; $('fn').showModal();
 });
 $('fn').addEventListener('close', async () => {
   const name = cleanName($('fnName').value);
   if ($('fn').returnValue !== 'ok' || !name || !fontFile) return;
-  if (FONTS.some((f) => f.name === name)) return say('השם תפוס — בחרו שם אחר', true);
+  if (FONTS.some((f) => f.name === name && f.css)) return say('השם תפוס על ידי פונט מובנה — בחרו שם אחר', true);
   try {
-    const url = await new Promise((r, j) => { const f = new FileReader(); f.onload = () => r(f.result); f.onerror = j; f.readAsDataURL(fontFile); });
-    document.fonts.add(await new FontFace(name, `url(${url})`).load());
-    fonts[name] = url; delete fontCache[name];
-    const kept = save('book.fonts', fonts);
-    if (!kept) delete fonts[name];
-    st.s.font = name; persist(); fillFonts(); syncVisibility();
+    const kept = await keepFont(name, await toDataUrl(fontFile));
     say(kept ? `הפונט "${name}" נשמר באפליקציה` : `הפונט "${name}" נטען רק לעכשיו (אין מקום לשמור אותו)`, !kept);
-    if (st.L) schedule();
   } catch { say('קובץ הפונט לא נטען', true); }
 });
+// Computer (Chrome/Edge): take Guttman / Stam fonts straight from the fonts Office installed here.
+async function importLocal() {
+  try {
+    const found = await localFonts();
+    if (!found.length) return say('לא נמצא במחשב הזה פונט גוטמן / סת"ם', true);
+    let kept = true;
+    for (const f of found) {
+      try { kept = (await keepFont(cleanName(f.family), await toDataUrl(await f.blob()), false)) && kept; } catch { kept = false; }
+    }
+    const pick = found.find((f) => f.family === st.s.font) || found.find((f) => f.family === 'Guttman Stam') || found[0];
+    st.s.font = cleanName(pick.family); persist(); fillFonts(); syncVisibility();
+    if (st.L) schedule();
+    say(`יובאו מהמחשב: ${found.map((f) => f.family).join(', ')}${kept ? '' : ' (לא כולם נשמרו — אין מקום)'}`, !kept);
+  } catch (err) {
+    say({ NotAllowedError: 'לא ניתנה הרשאה לקרוא את הפונטים של המחשב', SecurityError: 'הדפדפן חסם את הגישה לפונטים — לחצו שוב על הכפתור',
+      AbortError: 'הייבוא בוטל' }[err.name] || 'הייבוא נכשל', true);
+  }
+}
+$('fontLocal').hidden = !canQueryLocal();
+$('fontLocal').addEventListener('click', importLocal);
+$('fontWarn').addEventListener('click', (e) => { if (e.target.dataset.local != null) importLocal(); });
+// Word export: the font file goes inside the .docx when it is TrueType and its licence allows it.
+function embedNote(info) {
+  if (!info) return 'קובץ מסוג WOFF / לא מזוהה — יעבוד בתצוגה וב-PDF, אבל לא יוטמע בקובץ Word (עדיף קובץ TTF).';
+  if (info.why === 'ttc') return 'קובץ אוסף (TTC) — יעבוד בתצוגה וב-PDF, אבל לא יוטמע בקובץ Word.';
+  if (info.why === 'cff') return 'פונט מסוג OpenType-CFF — Word לא מטמיע כאלה; בתצוגה וב-PDF הוא תקין.';
+  if (info.embed === 'no') return 'רישיון הפונט אוסר להטמיע אותו בקבצים — בוורד הוא יופיע רק במכשירים שהוא מותקן בהם. ב-PDF הוא תקין.';
+  if (info.embed === 'print') return 'רישיון הפונט מתיר הטמעה לקריאה והדפסה בלבד — במכשיר בלי הפונט, Word יפתח את הקובץ לקריאה בלבד.';
+  return '';
+}
+async function embedFor(fam) {   // → { font: {bytes, family} | null, note }
+  if (!fonts[fam]) return { font: null, note: '' };
+  const bytes = await dataUrlBytes(fonts[fam]), info = fileInfo(bytes), note = embedNote(info);
+  return { font: info && info.embed !== 'no' ? { bytes, family: info.family || fam } : null, note };
+}
 
 // ----- [3] FILE → original pane (tap a paragraph there to edit it too) -----
 function renderOrig() {
@@ -412,9 +460,12 @@ function plan() {
     return parts;
   } catch (err) { $('exErr').textContent = err.message; return null; }
 }
-$('save').addEventListener('click', () => {
-  const f = fontInfo(st.L.s.font);
-  $('exFontWarn').innerHTML = f?.url ? `ל-Word: הפונט "${esc(f.name)}" צריך להיות מותקן במחשב — <a href="${f.url}" target="_blank" rel="noopener">להורדה חינם</a>. ב-PDF ובהדפסה הוא תקין.` : '';
+$('save').addEventListener('click', async () => {
+  const f = fontInfo(st.L.s.font), fam = st.L.s.fontFamily;
+  $('exFontWarn').innerHTML = f?.url && !fonts[fam] ? `ל-Word: הפונט "${esc(f.name)}" צריך להיות מותקן במחשב — <a href="${f.url}" target="_blank" rel="noopener">להורדה חינם</a>. ב-PDF ובהדפסה הוא תקין.` : '';
+  if (fonts[fam]) embedFor(fam).then(({ font, note }) => {
+    $('exFontWarn').textContent = font ? `✓ הפונט "${fam}" שמור באפליקציה ויוטמע בקובץ ה-Word וב-PDF.${note ? ' ' + note : ''}` : note;
+  });
   plan(); $('ex').showModal();
 });
 $('exMode').addEventListener('change', plan);
@@ -429,14 +480,16 @@ const outOpts = () => ({ imp: st.s.imp, sig: st.s.sig, dpi: st.s.dpi });
 async function saveAll(kind) {
   const parts = plan(); if (!parts) return;
   const pages = st.pages, L = st.L, o = outOpts(), base = baseName(); // snapshot: nothing can change mid-export
-  for (const b of ['exWord', 'exPdf']) $(b).disabled = true;
+  for (const b of ['exWord', 'exPdf']) $(b).disabled = true;          // before any await: no double export
   try {
+    const { font: embed, note } = kind === 'docx' ? await embedFor(L.s.fontFamily) : {};
+    if (note) say(note, true);
     const files = [];
     for (const [k, [a, b, t]] of parts.entries()) {
       const name = parts.length > 1 ? `${base} ${String(k + 1).padStart(2, '0')} ${t ? fileSafe(t) : `(${a}-${b})`}.${kind}` : `${base}.${kind}`;
       say(`יוצר קובץ ${k + 1}/${parts.length}…`);
       const slice = pages.slice(a - 1, b);
-      files.push([name, kind === 'docx' ? await buildDocx(slice, L.paras, L.s, L.g)
+      files.push([name, kind === 'docx' ? await buildDocx(slice, L.paras, L.s, L.g, embed)
         : await pdf(units(slice, o.imp, o.sig, (pg) => pageHTML(pg, L.paras), L.g), L, o.dpi, k, parts.length)]);
     }
     if (files.length === 1) download(files[0][1], files[0][0]);

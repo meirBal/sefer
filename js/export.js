@@ -1,5 +1,6 @@
 // ===== EXPORT — Word (.docx, one section per page = exact page breaks + per-page header/footer), download, browser print =====
 import { esc as X } from './text.js';
+import { obfuscate } from './fontfile.js';
 
 const TW = 56.6929;                                     // twips per mm
 const tw = (mm) => Math.round(mm * TW), hp = (pt) => Math.round(pt * 2), ln = (pt) => Math.round(pt * 20);
@@ -47,7 +48,9 @@ function footerXml(pg, s, g) {
 
 // Word wraps a hair differently than the browser; its bottom margin is one line smaller than ours, so a stray
 // extra line lands in that slack instead of spilling a whole new page (our section breaks fix where pages end).
-export async function buildDocx(pages, paras, s, g) {
+// font = { bytes, family } of a TrueType file to embed, so Word shows it where it isn't installed; null = name only.
+// Word maps an embedded font by its internal family name, so that name is used throughout the document.
+export async function buildDocx(pages, paras, s, g, font = null) {
   const z = new JSZip();
   const W = tw(g.pw), H = tw(g.ph), cw = tw(g.cw), lineMm = s.bodyPt * s.lineRatio * 0.3528;
   const slack = g.foot ? Math.max(0, Math.min(lineMm, s.mb - g.ftBot - g.hlineMm - 0.5)) : lineMm; // footer must stay inside the margin
@@ -73,12 +76,22 @@ export async function buildDocx(pages, paras, s, g) {
     rels += `<Relationship Id="f${k}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer${k}.xml"/>`;
     types += `<Override PartName="/word/footer${k}.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`;
   });
-  const f = X(s.fontFamily);
-  z.file('[Content_Types].xml', `${HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>${types}</Types>`);
+  const f = X(font?.family || s.fontFamily);
+  let fontRel = '', fontType = '', embedSetting = '';
+  if (font) {
+    const { data, key } = obfuscate(font.bytes);
+    z.file('word/fonts/font1.odttf', data);
+    z.file('word/fontTable.xml', `${HEAD}<w:fonts ${NS}><w:font w:name="${f}"><w:charset w:val="B1"/><w:embedRegular r:id="rF1" w:fontKey="${key}"/></w:font></w:fonts>`);
+    z.file('word/_rels/fontTable.xml.rels', `${HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rF1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" Target="fonts/font1.odttf"/></Relationships>`);
+    fontRel = '<Relationship Id="ft" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Target="fontTable.xml"/>';
+    fontType = '<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/><Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>';
+    embedSetting = '<w:embedTrueTypeFonts/>';
+  }
+  z.file('[Content_Types].xml', `${HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${fontType}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>${types}</Types>`);
   z.file('_rels/.rels', `${HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
-  z.file('word/_rels/document.xml.rels', `${HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="t" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>${rels}</Relationships>`);
+  z.file('word/_rels/document.xml.rels', `${HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="t" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>${fontRel}${rels}</Relationships>`);
   z.file('word/styles.xml', `${HEAD}<w:styles ${NS}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${f}" w:hAnsi="${f}" w:cs="${f}" w:eastAsia="${f}"/><w:sz w:val="${hp(s.bodyPt)}"/><w:szCs w:val="${hp(s.bodyPt)}"/><w:rtl/><w:lang w:val="he-IL" w:bidi="he-IL"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="0"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`);
-  z.file('word/settings.xml', `${HEAD}<w:settings ${NS}><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`);
+  z.file('word/settings.xml', `${HEAD}<w:settings ${NS}>${embedSetting}<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`);
   z.file('word/document.xml', `${HEAD}<w:document ${NS}><w:body>${body}</w:body></w:document>`);
   return z.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE' });
 }
