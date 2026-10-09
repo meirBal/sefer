@@ -171,6 +171,37 @@ await step('bundled free font works offline + embeds in PDF', async () => {
   await d.saveAs(path.join(OUT, 'frank.pdf'));
   await page.click('#pvClose');
 });
+await step('search ignores niqqud, jumps and highlights; ▼ cycles', async () => {
+  await page.fill('#q', 'על פני');                        // text has עַל־פְּנֵי with niqqud + maqaf
+  await page.waitForFunction(() => /^\d+\/\d+/.test(document.querySelector('#qInfo').textContent), null, { timeout: 5000 });
+  const [n, total] = (await page.textContent('#qInfo')).match(/(\d+)\/(\d+)/).slice(1).map(Number);
+  if (n !== 1 || total < 10) throw new Error('hits ' + total);
+  const hl = await page.evaluate(() => (CSS.highlights?.get('found')?.size ?? 0) + document.querySelectorAll('.hit').length);
+  if (!hl) throw new Error('no highlight');
+  const hlText = await page.evaluate(() => [...CSS.highlights.get('found')][0].toString().replace('־', ' ').replace(/[\u0591-\u05C7]/g, ''));
+  if (hlText !== 'על פני') throw new Error('highlighted: ' + hlText);
+  await page.click('#qNext');
+  if (!/^2\//.test(await page.textContent('#qInfo'))) throw new Error('next');
+  await page.fill('#q', 'אין כזה טקסט');
+  await page.waitForFunction(() => document.querySelector('#qInfo').textContent === 'לא נמצא', null, { timeout: 5000 });
+  await page.fill('#q', '');
+});
+await step('chapter starts on a right-hand page + split by chapters', async () => {
+  await page.locator('.adv > summary').click();
+  await pick('chapStart', 'odd');
+  await page.waitForFunction(() => [...document.querySelectorAll('#result .page .body')].some((b) => b.firstElementChild?.classList.contains('h') && b.textContent.startsWith('פרשה 2')), null, { timeout: 15000 });
+  const bad = await page.$$eval('#result .page', (ps) => ps.filter((p, i) => i > 0 && p.querySelector('.f.h') && p.querySelector('.body').firstElementChild?.classList.contains('h') && i % 2 === 1).length);
+  if (bad) throw new Error(`${bad} chapters start on a left-hand page`);
+  await page.click('#save'); await page.selectOption('#exMode', 'chapters'); await page.fill('#exSpec', '');
+  const items = await page.locator('#exList li').allTextContents();
+  if (items.length < 5 || !/פרשה 2/.test(items[1])) throw new Error('chapter parts: ' + items.slice(0, 2).join(' | '));
+  if (await page.textContent('#exErr')) throw new Error(await page.textContent('#exErr'));
+  const [d] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.click('#exWord')]);
+  await d.saveAs(path.join(OUT, 'chapters.zip'));
+  await page.selectOption('#exMode', 'one'); await page.click('#ex button[value="close"]');
+  await pick('chapStart', 'none');
+  await page.locator('.adv > summary').click();           // fold "advanced" again
+});
 await step('settings split: basic visible, advanced folded', async () => {
   if (await page.locator('.adv').evaluate((d) => d.open)) throw new Error('advanced open by default');
   if (!(await page.locator('[data-k="stretch"]').isVisible())) throw new Error('stretch not in basic');

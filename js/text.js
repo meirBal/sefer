@@ -63,3 +63,13 @@ export function splitPlan(total, mode, spec) {
   else for (let k = 0, m = Math.min(n, total); k < m; k++) out.push([Math.floor(k * total / m) + 1, Math.floor((k + 1) * total / m)]);
   return out;
 }
+
+// Split by chapters: starts = 1-based pages where a chapter begins (sorted). n chapters per file; pages before the first
+// chapter (title, introduction) go with the first file. → [[from, to, firstChapterIndex]]
+export function chapterPlan(total, starts, n) {
+  n = Math.floor(+n || 1);
+  if (!(n >= 1)) throw new Error('יש להזין מספר חיובי');
+  if (!starts.length) throw new Error('לא נמצאו פרקים — סמנו כותרות בוורד (כותרת 1) או בחרו חלוקה אחרת');
+  const cuts = starts.filter((p, i) => i % n === 0).map((p, i) => (i === 0 ? 1 : p));
+  return cuts.map((a, i) => [a, (cuts[i + 1] ?? total + 1) - 1, i * n]);
+}

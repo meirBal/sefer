@@ -1,6 +1,6 @@
 // Unit tests for pure helpers. usage: node book/tests/text.test.mjs
 import assert from 'node:assert/strict';
-import { stripMarks, tokenize, gematria, splitPlan, esc } from '../js/text.js';
+import { stripMarks, tokenize, gematria, splitPlan, esc, chapterPlan } from '../js/text.js';
 import { impose } from '../js/print.js';
 
 const t = (name, fn) => { try { fn(); console.log('✓', name); } catch (e) { console.log('✗', name, e.message); process.exitCode = 1; } };
@@ -31,4 +31,9 @@ t('impose: Hebrew booklet pairs 1↔last, 2↔last-1', () => {
   assert.deepEqual(impose(8, 'book'), [[0, 7], [6, 1], [2, 5], [4, 3]]);
   assert.deepEqual(impose(6, 'book'), [[0, null], [null, 1], [2, 5], [4, 3]]);   // padded to 8 with blanks
   assert.deepEqual(impose(8, 'sig', 4), [[0, 3], [2, 1], [4, 7], [6, 5]]);       // two 4-page signatures
+});
+t('chapter split: front matter joins first file, n per file', () => {
+  assert.deepEqual(chapterPlan(20, [3, 8, 15], 1), [[1, 7, 0], [8, 14, 1], [15, 20, 2]]);
+  assert.deepEqual(chapterPlan(20, [3, 8, 15], 2), [[1, 14, 0], [15, 20, 2]]);
+  assert.throws(() => chapterPlan(20, [], 1));
 });

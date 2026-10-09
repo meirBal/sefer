@@ -26,6 +26,9 @@ export function prepare(doc, s, g) {
     brk ||= s.breaks && p.brk;
     if (p.empty && !s.empties) continue;
     const chapter = p.h && p.h <= s.headLvl;
+    // chapStart page|odd: a chapter (first of a group of headings) opens a new page; 'odd' = a right-hand page (compose adds a blank)
+    const cs = chapter && s.chapStart !== 'none' && !out.findLast((q) => !q.empty && !q.orn)?.h && out.some((q) => !q.empty);
+    brk ||= cs;
     if (chapter && s.divider && out.some((q) => !q.h && !q.empty) && !brk) {
       const tok = [{ t: s.divider, sz: s.bodyPt, b: false }];
       out.push({ src, tok, h: 0, center: true, brk: false, empty: false, lh: g.line(s.bodyPt * 1.5), orn: true, text: '' });
@@ -37,7 +40,7 @@ export function prepare(doc, s, g) {
       max = tok.slice(1).reduce((m, t) => Math.max(m, t.sz), tok[0].sz / 1.35);
     }
     if (p.h) opening = chapter || opening; else if (!p.empty && !p.center) opening = false; // centered subtitles keep waiting
-    out.push({ src, tok, h: p.h, center: p.center, brk, empty: !tok.length, lh: g.line(max),
+    out.push({ src, tok, h: p.h, center: p.center, brk, cs, empty: !tok.length, lh: g.line(max),
       text: p.h ? stripMarks(p.runs.map((r) => r.t).join(''), s.marks).replace(/\s+/g, ' ').trim() : '' });
     brk = false;
   }
@@ -166,6 +169,7 @@ export function compose(content, paras, s, g, blanks, over) {
     const lead = items.find((it) => !paras[it.pi].orn);
     const top = lead && lead.from === 0 && heads[0] === lead ? paras[lead.pi].text : head;  // section in effect at the page top
     if (heads.length) head = paras[heads.at(-1).pi].text;
+    if (s.chapStart === 'odd' && paras[items[0].pi].cs && items[0].from === 0 && out.length % 2) out.push({ id: `o${id}`, blank: true, pad: true });
     out.push({ id, items, auto: s.autoHead ? (first ? top : head) : '' });
     for (let k = 0; k < (blanks[id] || 0); k++) out.push({ id: `b${id}#${k}`, blank: true });
   }

@@ -47,6 +47,12 @@ input[type=checkbox] { width: auto; }
 .pane { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: auto; height: calc(100vh - 150px); min-height: 360px; }
 .pane h2 { position: sticky; top: 0; z-index: 2; margin: 0; padding: 8px 12px; font-size: 15px; background: var(--card); border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
 .pane h2 input { width: 120px; margin-inline-start: auto; }
+.pane h2 { flex-wrap: wrap; }
+.find { flex-basis: 100%; display: flex; gap: 6px; align-items: center; font-weight: 400; }
+.pane h2 .find input { flex: 1; width: auto; margin: 0; }
+.find button { padding: 2px 10px; }
+::highlight(found) { background: #ffd54a; color: #000; }
+.hit { background: #ffe9a8; }
 .orig { padding: 14px 18px; font-family: "Times New Roman", serif; }
 .orig p { margin: 0 0 .35em; }
 .orig .h { font-weight: 700; }

@@ -5,7 +5,8 @@ import { geom, prepare, paginate, compose, remap, pageHTML, headHTML, pageVars }
 import { buildDocx, download, printPages } from './export.js';
 import { units, makePdf, fontCss, testUnits } from './print.js';
 import { stretchPage, stretchHTML } from './stretch.js';
-import { splitPlan, esc } from './text.js';
+import { splitPlan, chapterPlan, esc } from './text.js';
+import { find, mark, clear, queryLength } from './search.js';
 
 const $ = (id) => document.getElementById(id);
 const OVER = () => ({ r: {}, c: {}, l: {}, h: {} });
@@ -14,7 +15,7 @@ const st = { s: load('book.settings', DEFAULTS), doc: null, name: 'ספר', L: n
 const fonts = load('book.fonts', {});                      // fonts the user added: { family: dataURL }
 const say = (m, err) => { for (const id of ['status', 'pvStatus']) { $(id).textContent = m; $(id).classList.toggle('err', !!err); } };
 const NUMERIC = ['padTo', 'headLvl', 'sig', 'numFrom', 'lineRatio'];
-const HEADER_ONLY = ['midText', 'leftText', 'numFmt', 'numFrom', 'headMode', 'rule', 'autoHead', 'headLvl', 'padTo']; // no re-measuring
+const HEADER_ONLY = ['midText', 'leftText', 'numFmt', 'numFrom', 'headMode', 'rule', 'autoHead', 'padTo']; // no re-measuring
 const pickHeader = (s) => Object.fromEntries(HEADER_ONLY.map((k) => [k, s[k]]));
 if (st.s.numFmt === 'none') Object.assign(st.s, { numFmt: 'heb', numPos: 'none' }); // settings saved by v1.0.0
 st.s.lineRatio = [1.2, 1.35, 1.5, 1.75].reduce((a, b) => (Math.abs(b - st.s.lineRatio) < Math.abs(a - st.s.lineRatio) ? b : a)); // v1.1 free values
@@ -29,6 +30,8 @@ function syncVisibility() {
   $('leftBox').hidden = st.s.numPos === 'to' || st.s.numPos === 'tl';
   $('sigBox').hidden = st.s.imp !== 'sig';
   $('impHint').hidden = st.s.imp === 'none';
+  const dv = document.querySelector('[data-k="divider"]');   // a chapter on a new page needs no divider
+  dv.disabled = st.s.chapStart !== 'none'; dv.title = dv.disabled ? 'לא פעיל כשפרק מתחיל בעמוד חדש' : '';
 }
 
 function initForm() {
@@ -127,6 +130,7 @@ $('file').addEventListener('change', async (e) => {
     if (!doc.paras.some((p) => !p.empty)) throw new Error('הקובץ ריק — אין בו טקסט');
     Object.assign(st, { doc, name: file.name.replace(/\.\w+$/, ''), blanks: {}, over: OVER(), L: null, pages: [], undo: null });
     $('exName').value = st.name; $('undo').hidden = true;
+    resetSearch();
     renderOrig();
     $('result').innerHTML = '<p class="hint">לחצו "בצע".</p>';
     $('run').disabled = false; $('save').disabled = true;
@@ -192,8 +196,9 @@ function draw() {
   lazyStretch(r);
   const blanks = st.pages.filter((p) => p.blank).length;
   $('resInfo').textContent = `${st.pages.length} עמודים${blanks ? ` (${blanks} ריקים)` : ''} · ${s.size}`;
-  $('save').disabled = false;
+  $('save').disabled = false; $('q').disabled = false;
   tab(1);
+  if ($('q').value.trim()) search(false);                  // same query on the new layout, no jumping
 }
 const headKey = (p) => `${p.r}|${p.c}|${p.l}|${p.cols}|${p.foot}`;
 function drawHeads() {         // header-only edits: patch headers/footers, keep the page bodies
@@ -204,6 +209,7 @@ function drawHeads() {         // header-only edits: patch headers/footers, keep
     if (el) el.closest('.pw').outerHTML = render(pg);
   }
   lazyStretch($('result'));
+  if (hits.length) showHit(false);
 }
 $('run').addEventListener('click', run);
 $('zoom').addEventListener('input', (e) => { zoomTouched = true; $('result').style.setProperty('--z', e.target.value); });
@@ -333,23 +339,75 @@ $('undo').addEventListener('click', () => {
   renderOrig(); if (st.L) run();
 });
 
+// ----- [7b] SEARCH: in the laid-out book; Enter / ▼ = next, ▲ = previous; re-run after every re-layout -----
+let hits = [], hitAt = -1, qTimer;
+function resetSearch() {
+  hits = []; hitAt = -1; clear();
+  $('q').disabled = true; $('qInfo').textContent = '';
+}
+function search(jump) {
+  hits = st.L && $('q').value.trim() ? find($('q').value, st.L.paras, st.pages) : [];
+  if (jump || hitAt < 0) hitAt = hits.length ? 0 : -1;
+  if (hitAt >= hits.length) hitAt = hits.length - 1;
+  if (!hits.length) clear();
+  showHit(jump);
+}
+function showHit(scroll) {
+  const q = $('q').value.trim(), h = hits[hitAt], n = queryLength(q);
+  $('qInfo').textContent = !q ? '' : n < 2 ? 'לפחות 2 אותיות' : !h ? 'לא נמצא'
+    : `${hitAt + 1}/${hits.length}${hits.length >= 2000 ? '+' : ''} · עמ' ${st.pages[h.page].n}`;
+  const pw = h && $('result').children[h.page];
+  if (!pw) return;
+  if (scroll) { tab(1); pw.scrollIntoView({ block: 'start' }); }
+  requestAnimationFrame(() => {                           // page content is laid out once on screen (content-visibility)
+    const pg = pw.querySelector('.page');
+    if (st.L.s.stretch) stretchPage(pg);                  // stretch first: it rewrites text nodes the mark points into
+    const el = mark(pg, st.L.paras[h.pi].src, h);
+    if (scroll) el?.scrollIntoView({ block: 'center' });
+  });
+}
+const step = (d) => { if (!hits.length) return; hitAt = (hitAt + d + hits.length) % hits.length; showHit(true); };
+$('q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => search(true), 250); });
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(qTimer); hits.length ? step(e.shiftKey ? -1 : 1) : search(true); } });
+$('qNext').addEventListener('click', () => step(1));
+$('qPrev').addEventListener('click', () => step(-1));
+
 // ----- [8] SAVE: split plan → Word / PDF files (zip when several), preview per part -----
-const SPEC = { every: 'עמודים בכל קובץ', parts: 'מספר קבצים', ranges: 'טווחים, לדוגמה: 1-48, 49-96' };
+const SPEC = { every: 'עמודים בכל קובץ', parts: 'מספר קבצים', ranges: 'טווחים, לדוגמה: 1-48, 49-96', chapters: 'פרקים בכל קובץ (ריק = 1)' };
+// Chapter starts: pages where a heading of the running-head level begins → [{ page (1-based), title }]
+function chapters() {
+  const { paras, s } = st.L, out = [];
+  st.pages.forEach((pg, k) => {
+    const it = !pg.blank && pg.items.find((x) => x.from === 0 && paras[x.pi].h && paras[x.pi].h <= s.headLvl);
+    if (it) out.push({ page: k + 1, title: paras[it.pi].text, mid: pg.items[0].pi !== it.pi && !paras[pg.items[0].pi].h });
+  });
+  return out;
+}
+const fileSafe = (t) => Array.from(t.replace(/[\x00-\x1f\u200e\u200f\u202a-\u202e\u0591-\u05BD\u05BF-\u05C7]/g, '').replace(/[\\/:*?"<>|]/g, '_'))
+  .slice(0, 40).join('').trim();
 function plan() {
   const mode = $('exMode').value, imp = st.s.imp, unit = imp === 'sig' ? st.s.sig : 4;
   $('exSpecBox').hidden = mode === 'one'; $('exSpecLbl').textContent = SPEC[mode] || '';
   $('exErr').textContent = ''; $('exList').innerHTML = '';
   if (!st.pages.length) return null;
   try {
-    const parts = splitPlan(st.pages.length, mode, $('exSpec').value);
+    let parts, note = '';
+    if (mode === 'chapters') {
+      const ch = chapters();
+      parts = chapterPlan(st.pages.length, ch.map((c) => c.page), $('exSpec').value).map(([a, b, ci]) => [a, b, ch[ci].title]);
+      if (ch.some((c) => c.mid)) note = '⚠ יש פרקים שמתחילים באמצע עמוד — סוף הפרק הקודם יגיע לקובץ שלהם. מומלץ במתקדם: "פרק חדש מתחיל: בעמוד חדש".';
+    } else parts = splitPlan(st.pages.length, mode, $('exSpec').value);
     // A bound book cut into files: every file must start on a right-hand (odd) page and hold whole booklets/signatures.
+    // By chapters, each file is its own booklet (padded at its end), so only the odd start is required.
     if (imp !== 'none' && parts.length > 1) parts.forEach(([a, b], i) => {
-      if (a % 2 === 0 || (i < parts.length - 1 && (b - a + 1) % unit))
-        throw new Error(`לחוברות: כל קובץ צריך להתחיל בעמוד אי-זוגי ולהכיל כפולה של ${unit} עמודים (קובץ ${i + 1}: ${a}–${b})`);
+      if (a % 2 === 0 || (mode !== 'chapters' && i < parts.length - 1 && (b - a + 1) % unit))
+        throw new Error(mode === 'chapters' ? `לחוברות: כל פרק צריך להתחיל בעמוד ימני — במתקדם בחרו "פרק חדש מתחיל: בעמוד ימני" (קובץ ${i + 1} מתחיל בעמוד ${a})`
+          : `לחוברות: כל קובץ צריך להתחיל בעמוד אי-זוגי ולהכיל כפולה של ${unit} עמודים (קובץ ${i + 1}: ${a}–${b})`);
     });
     const big = imp === 'book' && parts.find(([a, b]) => b - a + 1 > 64);  // a fold of >64 pages is not a book
     if (big) throw new Error(`חוברת אחת מתקפלת עד 64 עמודים (כאן ${big[1] - big[0] + 1}). לספר עבה בחרו "חוברות (קונטרסים)" — כל קונטרס מקופל ונתפר בנפרד.`);
-    $('exList').innerHTML = parts.map(([a, b], i) => `<li>עמודים ${a}–${b}${a % 2 ? '' : ' <span class="warn">⚠ מתחיל בעמוד זוגי</span>'}` +
+    $('exErr').textContent = note;
+    $('exList').innerHTML = parts.map(([a, b, t], i) => `<li>${t ? `<b>${esc(t)}</b> · ` : ''}עמודים ${a}–${b}${a % 2 ? '' : ' <span class="warn">⚠ מתחיל בעמוד זוגי</span>'}` +
       `<button type="button" data-view="${i}">👁 תצוגת הדפסה</button></li>`).join('');
     return parts;
   } catch (err) { $('exErr').textContent = err.message; return null; }
@@ -374,8 +432,8 @@ async function saveAll(kind) {
   for (const b of ['exWord', 'exPdf']) $(b).disabled = true;
   try {
     const files = [];
-    for (const [k, [a, b]] of parts.entries()) {
-      const name = parts.length > 1 ? `${base} ${String(k + 1).padStart(2, '0')} (${a}-${b}).${kind}` : `${base}.${kind}`;
+    for (const [k, [a, b, t]] of parts.entries()) {
+      const name = parts.length > 1 ? `${base} ${String(k + 1).padStart(2, '0')} ${t ? fileSafe(t) : `(${a}-${b})`}.${kind}` : `${base}.${kind}`;
       say(`יוצר קובץ ${k + 1}/${parts.length}…`);
       const slice = pages.slice(a - 1, b);
       files.push([name, kind === 'docx' ? await buildDocx(slice, L.paras, L.s, L.g)

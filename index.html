@@ -49,6 +49,7 @@
       <label>שוליים תחתון <input data-k="mb" type="number" min="5" max="50"></label>
       <label>שוליים פנימי (כריכה) <input data-k="mi" type="number" min="5" max="50"></label>
       <label>שוליים חיצוני <input data-k="mo" type="number" min="5" max="50"></label>
+      <label>פרק חדש מתחיל <select data-k="chapStart"><option value="none">ברצף</option><option value="page">בעמוד חדש</option><option value="odd">בעמוד ימני (מוסיף עמוד ריק כשצריך)</option></select></label>
       <label class="chk"><input data-k="widows" type="checkbox"> בלי שורה בודדת בראש/בתחתית עמוד</label>
       <label class="chk"><input data-k="breaks" type="checkbox"> לשמור מעברי עמוד מהוורד</label>
       <label class="chk"><input data-k="empties" type="checkbox"> לשמור שורות ריקות</label>
@@ -79,7 +80,9 @@
 <main class="panes" id="panes">
   <section class="pane"><h2>מקור <small id="origInfo"></small></h2><div id="orig" class="orig"><p class="hint">בחרו קובץ Word (‎.docx‎) כדי להתחיל.</p></div></section>
   <section class="pane"><h2>אחרי עימוד <small id="resInfo"></small>
-    <input id="zoom" type="range" min="0.25" max="1.2" step="0.05" value="0.5" aria-label="זום"></h2>
+    <input id="zoom" type="range" min="0.25" max="1.2" step="0.05" value="0.5" aria-label="זום">
+    <span class="find"><input id="q" type="search" placeholder="🔍 חיפוש בטקסט (גם בלי ניקוד)" disabled enterkeyhint="search">
+      <small id="qInfo"></small><button type="button" id="qPrev" aria-label="הקודם">▲</button><button type="button" id="qNext" aria-label="הבא">▼</button></span></h2>
     <div id="result" class="book"><p class="hint">לחצו "בצע". נגיעה בטקסט — עריכת הפסקה. הכפתור ⋯ ליד כל עמוד — כותרות, מספור ועמודים ריקים.</p></div></section>
 </main>
 
@@ -117,7 +120,7 @@
   <h3>שמירה וחלוקה לקבצים</h3>
   <label>חלוקה <select id="exMode">
     <option value="one">קובץ אחד</option><option value="every">כל X עמודים</option>
-    <option value="parts">למספר קבצים שווים</option><option value="ranges">לפי טווחי עמודים</option></select></label>
+    <option value="parts">למספר קבצים שווים</option><option value="ranges">לפי טווחי עמודים</option><option value="chapters">לפי פרקים</option></select></label>
   <label id="exSpecBox" hidden><span id="exSpecLbl"></span> <input id="exSpec"></label>
   <label>שם הקובץ <input id="exName"></label>
   <label>סידור להדפסה (PDF / הדפסה) <select data-o="imp"><option value="none">עמוד אחרי עמוד</option><option value="book">חוברת אחת (1 עם האחרון, 2 עם הלפני אחרון…)</option><option value="sig">חוברות (קונטרסים) לכריכה</option></select></label>
