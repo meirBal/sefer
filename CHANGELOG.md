@@ -1,3 +1,7 @@
+## 2.1.0 — 2026-10-09
+- Text search (ignores niqqud/te'amim, maqaf = space; highlights; ▲▼ / Enter); save split 'by chapters' (N chapters per file, files named by chapter); new option: chapter starts on a new page / right-hand page (auto blank)
+- previous: v2.0.0 (rollback: scripts/rollback.sh 2.0.0)
+
 ## 2.0.0 — 2026-10-09
 - Moved to its own address https://meirbal.github.io/sefer/ (own repo, full history and restore points kept); no longer shares anything with the home-management app
 - previous: v1.3.0 (rollback: scripts/rollback.sh 1.3.0)
