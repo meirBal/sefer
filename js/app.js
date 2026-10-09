@@ -86,8 +86,9 @@ async function useFont(s) {
   $('fontWarn').hidden = found;
   $('fontWarn').innerHTML = found ? '' : `הפונט "${esc(s.fontFamily)}" לא נמצא במכשיר הזה — מוצג פונט חלופי.` +
     (canQueryLocal() ? ' <button type="button" class="small" data-local>🔎 ייבוא מהמחשב</button>' : '') +
-    '<br>להעברה לטלפון: במחשב עם Office פותחים את התיקייה <b dir="ltr">C:\\Windows\\Fonts</b>, מחפשים <b>Guttman</b>, גוררים את הפונט לשולחן העבודה ' +
-    'ושולחים את הקובץ לעצמכם (וואטסאפ / מייל). כאן: "📁 הוספת קובץ פונט" ובוחרים אותו — הוא נשמר באפליקציה, ויוטמע גם בקבצי ה-Word וה-PDF.';
+    '<br>גוטמן סת"ם מגיע עם Office: במחשב שבו Office מותקן — "🔎 ייבוא מהמחשב", והקבצים שתפיקו שם (Word / PDF) יישאו את הפונט לכל מכשיר. ' +
+    'רישיון Office לא מתיר להעתיק את קובץ הפונט למכשירים אחרים; לשימוש כזה צריך רישיון מורחב (Monotype / בעל הזכויות). ' +
+    'פונט שיש לכם רישיון עליו — "📁 הוספת קובץ פונט". חלופה חינמית: סת"ם אשכנז CLM.';
 }
 function available(name) {   // a missing font measures exactly like the fallback
   const c = document.createElement('canvas').getContext('2d'), t = 'אבגדהשת abc';
