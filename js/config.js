@@ -26,5 +26,7 @@ export const FONTS = [
   { name: 'Guttman Stam1', label: 'גוטמן סת"ם 1 (Office)' },
   { name: 'Stam Ashkenaz CLM', url: 'https://culmus.sourceforge.io/', label: 'סת"ם אשכנז CLM (Culmus, חינמי)' },
   { name: 'Stam Sefarad CLM', url: 'https://culmus.sourceforge.io/', label: 'סת"ם ספרד CLM (Culmus, חינמי)' },
+    { name: 'Ashory font', css: 'css/fonts.css', label: 'כתב אשורי' },
+    { name: 'Ashory font1', css: 'css/fonts.css', label: 'כתב אשורי מנוקד' },
   { name: 'custom', label: 'אחר — שם פונט / קובץ פונט…' },
 ];
