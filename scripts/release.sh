@@ -13,5 +13,5 @@ printf '## %s — %s\n- %s\n- previous: v%s (rollback: scripts/rollback.sh %s)\n
   | cat - CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
 git add js/config.js CHANGELOG.md
 git commit -qm "release v$v: $note"
-git push -q origin HEAD:main "HEAD:refs/heads/$tag"                           # deploy + restore point
+git push -q origin HEAD:main && git push -q origin "HEAD:refs/heads/$tag"                         # deploy + restore point
 echo "released v$v (was v$prev)"
