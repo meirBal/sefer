@@ -1,6 +1,6 @@
 // Unit tests for pure helpers. usage: node book/tests/text.test.mjs
 import assert from 'node:assert/strict';
-import { stripMarks, tokenize, gematria, splitPlan, esc, chapterPlan } from '../js/text.js';
+import { stripMarks, tokenize, gematria, splitPlan, esc, chapterPlan, reRun } from '../js/text.js';
 import { impose } from '../js/print.js';
 
 const t = (name, fn) => { try { fn(); console.log('✓', name); } catch (e) { console.log('✗', name, e.message); process.exitCode = 1; } };
@@ -54,4 +54,11 @@ t('docx font obfuscation is reversible with the GUID key', () => {
   assert.notDeepEqual([...data.slice(0, 32)], [...src.slice(0, 32)]);
   assert.deepEqual([...data.slice(0, 32)].map((b, i) => b ^ k[i % 16]), [...src.slice(0, 32)]);
   assert.deepEqual([...data.slice(32)], [...src.slice(32)]);
+});
+t('reRun: a fixed letter keeps every run\'s size; Enter splits the paragraph', () => {
+  const runs = [{ t: 'הוראה קטנה ', sz: 11, b: false }, { t: 'פסוק גדול', sz: 18, b: true }], old = 'הוראה קטנה פסוק גדול';
+  assert.deepEqual(reRun(runs, old, old), [runs]);
+  assert.deepEqual(reRun(runs, old, 'הוראה קטנה פסוק גדול!'), [[runs[0], { ...runs[1], t: 'פסוק גדול!' }]]);
+  assert.deepEqual(reRun(runs, old, 'הוראה קטנה\nפסוק גדול'), [[{ ...runs[0], t: 'הוראה קטנה' }], [runs[1]]]);
+  assert.deepEqual(reRun(runs, old, ' '), []);
 });

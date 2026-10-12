@@ -6,9 +6,9 @@ import { buildDocx, download, printPages } from './export.js';
 import { units, makePdf, fontCss, testUnits } from './print.js';
 import { stretchPage, stretchHTML } from './stretch.js';
 import { fontInfo as fileInfo, canQueryLocal, localFonts, dataUrlBytes } from './fontfile.js';
-import { splitPlan, chapterPlan, esc } from './text.js';
+import { splitPlan, chapterPlan, esc, reRun } from './text.js';
 import { find, mark, clear, queryLength } from './search.js';
-import { readPage } from './ocr.js';
+import { shrink, readPage } from './ocr.js';
 
 const $ = (id) => document.getElementById(id);
 const OVER = () => ({ r: {}, c: {}, l: {}, h: {} });
@@ -194,10 +194,11 @@ $('file').addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
-// ----- [3b] PHOTOS → TEXT: each photo is read by the free AI server; the photos stay beside the text for checking -----
+// ----- [3b] PHOTOS → TEXT: each photo is read by the free AI server → review screen (photo beside its text, editable)
+// → only on "approve" does the text enter the book. The photos stay above the text for later checking. -----
 let shots = [], reading = null;                                // reading = AbortController of the batch in progress
 const setReading = (ctl) => { reading = ctl; $('file').disabled = $('photo').disabled = !!ctl; $('phStop').hidden = !ctl; };
-const note = (t) => ({ runs: [{ t, sz: 14, b: true }], h: 0, center: false, brk: false, empty: false });
+const dropPhoto = (ph) => { if (ph) { URL.revokeObjectURL(ph.full); URL.revokeObjectURL(ph.thumb); } };
 $('phStop').addEventListener('click', () => reading?.abort());
 $('photo').addEventListener('change', (e) => {
   shots = [...e.target.files].filter((f) => !f.type || f.type.startsWith('image/')); e.target.value = '';
@@ -209,39 +210,105 @@ $('photo').addEventListener('change', (e) => {
 $('ph').addEventListener('close', async () => {
   const files = shots; shots = [];
   if ($('ph').returnValue !== 'ok' || !files.length) return;
-  const newPage = $('phBreak').checked, append = !!st.doc && $('phAppend').checked, ctl = new AbortController();
-  const added = [], photos = [], failed = [];
+  const ctl = new AbortController(), pages = [];               // pages: [{ n, photo: {full, thumb} | null, paras, err }]
   let stop = '';
-  setReading(ctl); st.busy++; $('run').disabled = true;
+  setReading(ctl);
   for (const [i, f] of files.entries()) {
     say(`קורא דף ${i + 1} מתוך ${files.length}… (חצי דקה עד שתי דקות לדף)`);
-    let page;
+    const pg = { n: i + 1, photo: null, paras: [], err: '' };
     try {
-      const r = await readPage(f, ctl.signal);
-      photos.push({ full: URL.createObjectURL(r.full), thumb: URL.createObjectURL(r.thumb) });
-      page = r.paras;
+      const img = await shrink(f);
+      pg.photo = { full: URL.createObjectURL(img.full), thumb: URL.createObjectURL(img.thumb) };
+      pg.paras = await readPage(img.full, ctl.signal);
     } catch (err) {
-      if (ctl.signal.aborted) { stop = 'הקריאה הופסקה'; break; }
-      failed.push(i + 1);
-      page = [note(`⚠ דף ${i + 1} לא נקרא: ${err.message}`)];  // visible gap in the text, so nothing is silently missing
+      if (ctl.signal.aborted) { dropPhoto(pg.photo); stop = 'הקריאה הופסקה'; break; }
+      pg.err = err.message;
       if ([0, 403, 429, 502, 503].includes(err.status)) stop = err.message;   // no network / quota / busy: the next pages would fail too
     }
-    if (newPage && (added.length || append)) page[0].brk = true;
-    added.push(...page);
+    pages.push(pg);
     if (stop) break;
   }
   setReading(null);
-  const rest = stop && files.length > failed.length + photos.length ? ` · דפים שלא נקראו: ${files.length - failed.length - photos.length}` : '';
-  if (!photos.length) { say(`לא נקרא אף דף: ${stop || failed.length + ' נכשלו'}`, true); $('run').disabled = !st.doc; return; }
+  const failed = pages.filter((p) => p.err).map((p) => p.n), unread = files.length - pages.length;
+  const note = [stop, failed.length && `דפים שלא נקראו: ${failed.join(', ')}`, unread > 0 && `לא נשלחו: ${unread}`].filter(Boolean).join(' · ');
+  if (!pages.some((p) => p.paras.length)) { pages.forEach((p) => dropPhoto(p.photo)); return say(`לא נקרא אף דף${note ? ': ' + note : ''}`, true); }
+  say(note ? '⚠ ' + note : '', !!note);
+  review(pages, note, { append: !!st.doc && $('phAppend').checked, newPage: $('phBreak').checked });
+});
+
+// ----- [3c] REVIEW: one page at a time — the photo, a warning that AI makes mistakes, the text as editable paragraphs.
+// Only "approve" (or an explicit "cancel") ends it: the phone's back button just reopens the screen. -----
+let rv = null;                                                 // { pages, note, opts, at, seen }
+const rvd = $('rv');
+function review(pages, note, opts) {
+  rv = { pages, note, opts, at: 0, seen: new Set() };
+  $('rvBody').innerHTML = pages.map((pg, k) => `<section class="rv-page" data-k="${k}" hidden>
+    <div class="rv-shot">${pg.photo ? `<img alt="צילום דף ${k + 1}" data-src="${pg.photo.full}">` : '<p class="hint">אין צילום</p>'}</div>
+    <div class="rv-text">${pg.err ? `<p class="warn">⚠ הדף לא נקרא: ${esc(pg.err)}. אפשר להקליד כאן את הטקסט מהצילום, או להשאיר ריק.</p>`
+      : pg.paras.length ? '' : '<p class="warn">⚠ לא נמצא טקסט בדף. אפשר להקליד כאן, או להשאיר ריק.</p>'}
+    ${(pg.paras.length ? pg.paras : [null]).map((p, i) => `<textarea data-i="${i}" dir="rtl" rows="3" aria-label="דף ${k + 1}, פסקה ${i + 1}"
+      class="${p?.h ? 'h' : ''}" ${p?.center ? 'style="text-align:center"' : ''}>${p ? esc(plain(p)) : ''}</textarea>`).join('')}</div>
+  </section>`).join('');
+  rvd.classList.remove('zoom'); rvd.querySelector('[data-a="zoom"]').setAttribute('aria-pressed', 'false');
+  rvShow(0);
+  rvd.returnValue = ''; rvd.showModal();
+}
+function rvShow(k) {
+  rv.at = k; rv.seen.add(k);
+  for (const sec of $('rvBody').children) {
+    const on = +sec.dataset.k === k, img = sec.querySelector('img');
+    sec.hidden = !on;
+    if (img) on ? (img.src = img.dataset.src) : img.removeAttribute('src');   // one decoded 2400 px photo at a time
+  }
+  const n = rv.pages.length, all = rv.seen.size === n;
+  $('rvN').textContent = `דף ${k + 1} מתוך ${n}`;
+  $('rvOk').textContent = all ? '✓ בדקתי — להכניס לספר' : `✓ להכניס לספר (נבדקו ${rv.seen.size} מתוך ${n})`;
+  rvd.querySelector('[data-a="prev"]').disabled = k === 0;
+  rvd.querySelector('[data-a="next"]').disabled = k === n - 1;
+  rvd.querySelector('[data-a="next"]').classList.toggle('primary', !all);
+  $('rvOk').classList.toggle('primary', all);
+  $('rvBody').scrollTop = 0;
+}
+rvd.addEventListener('cancel', (e) => e.preventDefault());     // Esc / back must not throw the reading away
+rvd.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-a]')?.dataset.a; if (!a) return;
+  if (a === 'prev' || a === 'next') rvShow(rv.at + (a === 'next' ? 1 : -1));
+  if (a === 'zoom') e.target.closest('button').setAttribute('aria-pressed', rvd.classList.toggle('zoom'));
+  if (a === 'drop' && confirm('לבטל את כל הטקסט שנקרא מהצילומים?')) rvd.close('drop');
+});
+$('rvOk').addEventListener('click', (e) => {
+  const n = rv.pages.length;
+  if (rv.seen.size < n && !confirm(`עברת על ${rv.seen.size} מתוך ${n} דפים. להכניס את כולם לספר בלי לבדוק את השאר?`)) e.preventDefault();
+});
+rvd.addEventListener('close', async () => {
+  if (!rv) return;
+  if (!['ok', 'drop'].includes(rvd.returnValue)) return rvd.showModal();   // closed by the system (back button): keep everything
+  const { pages, note, opts } = rv; rv = null;
+  const tas = (k) => $('rvBody').querySelectorAll(`[data-k="${k}"] textarea`);
+  if (rvd.returnValue === 'drop') { pages.forEach((p) => dropPhoto(p.photo)); $('rvBody').innerHTML = ''; return say('הטקסט מהצילומים בוטל'); }
+  const added = [];
+  for (const [k, pg] of pages.entries()) {                    // untouched → as read; edited → sizes kept (reRun); Enter → new paragraph
+    const ps = [];
+    for (const ta of tas(k)) {
+      const p = pg.paras[+ta.dataset.i] ?? { runs: [{ t: '', sz: 14, b: false }], h: 0, center: false, brk: false, empty: false };
+      if (ta.value === ta.defaultValue) { if (plain(p).trim()) ps.push(p); continue; }
+      reRun(p.runs, ta.defaultValue, ta.value).forEach((runs, j) => ps.push({ ...p, runs, brk: j ? false : p.brk }));
+    }
+    if (ps.length && opts.newPage && (added.length || opts.append)) ps[0].brk = true;
+    added.push(...ps);
+    if (!ps.length) { dropPhoto(pg.photo); pg.photo = null; }
+  }
+  $('rvBody').innerHTML = '';
+  if (!added.length) { pages.forEach((p) => dropPhoto(p.photo)); return say('לא נשאר טקסט להכניס', true); }
+  const photos = pages.map((p) => p.photo).filter(Boolean), append = opts.append && !!st.doc;
   const count = {};                                            // main text size = most common by characters
   for (const p of added) if (!p.h) for (const r of p.runs) count[r.sz] = (count[r.sz] || 0) + r.t.length;
-  const doc = append                                           // st.doc read now: edits made while reading are kept
+  const doc = append                                           // st.doc read now: edits made meanwhile are kept
     ? { ...st.doc, paras: [...st.doc.paras, ...added] }
     : { paras: added, bodySz: +(Object.entries(count).sort((x, y) => y[1] - x[1])[0]?.[0] || 14), info: { notes: 0, lists: 0, boxes: 0 } };
   loadDoc(doc, append ? st.name : 'צילומים', [...(append ? st.photos : []), ...photos], append);
   await run();                                                 // the message comes after: the layout clears the status line
-  say(failed.length || stop ? `⚠ ${stop || 'חלק מהדפים לא נקראו'}${failed.length ? ` · דפים שנכשלו: ${failed.join(', ')}` : ''}${rest}`
-    : '✓ נקרא. בדקו את הטקסט מול הצילום — נגיעה בפסקה לתיקון', !!(failed.length || stop));
+  say(note ? `⚠ ${note}` : '✓ הטקסט נכנס לספר. אפשר לתקן עוד בכל רגע — נגיעה בפסקה', !!note);
 });
 
 // ----- [4] RUN: snapshot settings → prepare → paginate (measured) → remap edits → draw. Stale runs are dropped. -----

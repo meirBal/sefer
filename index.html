@@ -142,10 +142,18 @@
 <!-- ===== DIALOG: photos → text ===== -->
 <dialog id="ph"><form method="dialog">
   <h3>קריאת טקסט מצילום — <span id="phCount"></span></h3>
-  <p class="hint">הטקסט נקרא בשירות AI חינמי (חצי דקה עד שתי דקות לדף), עם ניקוד ככל שמופיע בדף. צילום ישר, חד ומואר נותן תוצאה טובה יותר. אחרי הקריאה כדאי לעבור על הטקסט מול הצילום.</p>
+  <p class="hint">הטקסט נקרא בשירות AI חינמי (חצי דקה עד שתי דקות לדף), עם ניקוד ככל שמופיע בדף. צילום ישר, חד ומואר נותן תוצאה טובה יותר. אחרי הקריאה ייפתח מסך בדיקה — הצילום ליד הטקסט — לתיקון לפני שהטקסט נכנס לספר.</p>
   <label class="chk"><input id="phBreak" type="checkbox"> כל צילום מתחיל בעמוד חדש (דפים נפרדים)</label>
   <label class="chk" hidden><input id="phAppend" type="checkbox"> להוסיף אחרי הטקסט שכבר טעון</label>
   <div class="row end"><button value="cancel" formnovalidate>ביטול</button><button value="ok" class="primary">קריאה</button></div>
+</form></dialog>
+
+<!-- ===== DIALOG: check the text read from photos before it enters the book ===== -->
+<dialog id="rv" class="wide" aria-labelledby="rvWarn"><form method="dialog">
+  <p id="rvWarn" class="warn rv-warn">⚠ הטקסט נקרא בבינה מלאכותית (AI) ועלול להכיל טעויות באותיות, בניקוד ובמילים. השוו לצילום ותקנו כאן — הטקסט נכנס לעימוד רק אחרי האישור.</p>
+  <div class="row rv-nav"><button type="button" data-a="prev">הקודם</button><b id="rvN" aria-live="polite"></b><button type="button" data-a="next">הבא</button><button type="button" data-a="zoom" aria-pressed="false">🔍 הגדלה</button></div>
+  <div id="rvBody"></div>
+  <div class="row end"><button type="button" data-a="drop">ביטול</button><button id="rvOk" value="ok" class="primary">✓ בדקתי — להכניס לספר</button></div>
 </form></dialog>
 
 <!-- ===== DIALOG: name of an added font file ===== -->

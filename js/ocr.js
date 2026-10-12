@@ -19,7 +19,7 @@ const b64 = async (blob) => {
 };
 
 // File → { full, thumb } JPEG blobs (EXIF orientation applied by the browser).
-async function shrink(file, max = 2400) {
+export async function shrink(file, max = 2400) {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
     .catch(() => { throw fail('לא ניתן לפתוח את התמונה — שמרו או צלמו אותה כ-JPEG'); });
   try {
@@ -28,19 +28,17 @@ async function shrink(file, max = 2400) {
   } finally { bmp.close?.(); }
 }
 
-// One page → { paras: [{runs:[{t,sz,b}], h, center, brk:false, empty:false}], full, thumb }.
+// Shrunk photo (shrink().full) → [{runs:[{t,sz,b}], h, center, brk:false, empty:false}].
 // Errors carry .status (0 = no network) so the caller can stop a batch on quota/network trouble.
-export async function readPage(file, signal) {
-  const { full, thumb } = await shrink(file);
+export async function readPage(full, signal) {
   let res;
   try {
     res = await fetch(URL_OCR, { method: 'POST', signal, headers: { 'Content-Type': 'application/json', apikey: KEY }, body: JSON.stringify({ image: await b64(full) }) });
   } catch (e) { if (e.name === 'AbortError') throw e; throw fail('אין חיבור לאינטרנט — קריאת צילומים צריכה רשת', 0); }
   const out = await res.json().catch(() => ({}));
   if (!res.ok || !Array.isArray(out.paras)) throw fail(out.error || 'קריאת הדף נכשלה', res.status);
-  const paras = out.paras.map((p) => ({
+  return out.paras.map((p) => ({
     runs: p.runs.map((r) => ({ t: r.t, sz: p.heading ? HEAD[p.heading] : SIZE[r.size] || 14, b: !!(p.bold || p.heading) })),
     h: p.heading || 0, center: !!p.center, brk: false, empty: false,
   }));
-  return { paras, full, thumb };
 }

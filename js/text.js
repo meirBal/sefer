@@ -73,3 +73,21 @@ export function chapterPlan(total, starts, n) {
   const cuts = starts.filter((p, i) => i % n === 0).map((p, i) => (i === 0 ? 1 : p));
   return cuts.map((a, i) => [a, (cuts[i + 1] ?? total + 1) - 1, i * n]);
 }
+
+// Text edited in a plain text box → runs again, keeping each run's size/bold: only the changed middle takes the
+// look of the run it was typed into. Then "\n" (Enter) splits into paragraphs. → [runs, runs, …] (empty ones dropped)
+export function reRun(runs, oldT, newT) {
+  let a = 0, b = 0;
+  while (a < oldT.length && a < newT.length && oldT[a] === newT[a]) a++;
+  while (b < oldT.length - a && b < newT.length - a && oldT[oldT.length - 1 - b] === newT[newT.length - 1 - b]) b++;
+  const owner = runs.flatMap((r, i) => Array(r.t.length).fill(i));            // char → its run (UTF-16 units, as compared)
+  const mid = owner[a > 0 ? a - 1 : a] ?? 0;
+  const own = [...owner.slice(0, a), ...Array(newT.length - a - b).fill(mid), ...owner.slice(owner.length - b)];
+  const paras = [[]];
+  for (let i = 0; i < newT.length; i++) {
+    if (newT[i] === '\n') { paras.push([]); continue; }
+    const cur = paras.at(-1), last = cur.at(-1);
+    if (last?.i === own[i]) last.t += newT[i]; else cur.push({ ...runs[own[i]], t: newT[i], i: own[i] });
+  }
+  return paras.map((rs) => rs.map(({ i, ...r }) => r)).filter((rs) => rs.some((r) => r.t.trim()));
+}

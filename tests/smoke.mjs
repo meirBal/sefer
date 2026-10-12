@@ -270,10 +270,10 @@ await step('add a font file: Word name read from the file, kept in the app, embe
   const z = await (await import('jszip')).default.loadAsync(fs.readFileSync(path.join(OUT, 'embed.docx')));
   if (!z.file('word/fonts/font1.odttf') || !/embedRegular/.test(await z.file('word/fontTable.xml').async('string'))) throw new Error('font not embedded');
 });
-await step('photos → text (mocked server): thumbnails, failed page marked, append keeps photos, quota stops the batch', async () => {
+await step('photos → text (mocked server): review screen with AI warning, fix before approving, failed page, cancel, append, quota stop', async () => {
   const png = path.join(OUT, 'shot.png');
   fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
-  const replies = [200, 422, 200, 200, 429, 200];               // one server answer per call, in order
+  const replies = [200, 422, 200, 200, 200, 429, 200];          // one server answer per call, in order
   let calls = 0;
   await page.route('**/functions/v1/page-ocr', (r) => {
     const code = replies[calls++];
@@ -281,23 +281,47 @@ await step('photos → text (mocked server): thumbnails, failed page marked, app
       { runs: [{ t: 'כותרת מצולמת', size: 'large' }], heading: 1, center: true },
       { runs: [{ t: 'הוראה קטנה ', size: 'small' }, { t: verse.repeat(4), size: 'normal' }] }] } : { error: 'בדיקה ' + code }) });
   });
-  const read = async (files, append, until) => {
+  const read = async (files, append) => {                       // → review screen open
     await page.setInputFiles('#photo', files);
     await page.waitForFunction(() => document.querySelector('#ph').open);
     if (append) await page.locator('#phAppend').check();
     await page.click('#ph button[value="ok"]');
-    for (let i = 0; calls < until && i < 200; i++) await page.waitForTimeout(50);
-    await page.waitForFunction(() => !document.querySelector('#photo').disabled, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelector('#rv').open, null, { timeout: 20000 });
   };
-  await read([png, png, png], false, 3);
-  if (calls !== 3 || (await page.locator('#orig .shots img').count()) !== 2) throw new Error('first batch');
-  if (!/דף 2 לא נקרא/.test(await page.textContent('#orig'))) throw new Error('failed page not marked in the text');
+  const shots = () => page.locator('#orig .shots img').count();
+  const before = await page.locator('#result .page').count();
+  await read([png, png, png]);
+  if (!/בינה מלאכותית/.test(await page.textContent('#rv .rv-warn'))) throw new Error('no AI warning');
+  if ((await page.locator('#result .page').count()) !== before) throw new Error('text entered the book before approval');
+  await page.evaluate(() => document.querySelector('#rv').close());   // like the phone's back button: nothing is lost
+  if (!(await page.evaluate(() => document.querySelector('#rv').open))) throw new Error('back button closed the review');
+  const ta = page.locator('.rv-page[data-k="0"] textarea[data-i="1"]');
+  await ta.fill((await ta.inputValue()).replace('הוראה קטנה', 'הוראה מתוקנת\n'));   // a fix + Enter = new paragraph
+  await page.locator('.rv-page[data-k="0"] textarea[data-i="0"]').fill('כותרת מתוקנת');
+  await page.click('#rv [data-a="next"]');
+  if (!/דף 2 מתוך 3/.test(await page.textContent('#rvN')) || !/לא נקרא/.test(await page.textContent('.rv-page[data-k="1"]'))) throw new Error('failed page not shown');
+  let asked = '';
+  page.once('dialog', (d) => { asked = d.message(); d.accept(); });
+  await page.click('#rv button[value="ok"]');
+  if (!/2 מתוך 3/.test(asked)) throw new Error('no warning for unchecked pages: ' + asked);
+  await page.waitForFunction(() => /כותרת מתוקנת/.test(document.querySelector('#orig').textContent), null, { timeout: 20000 });
+  if ((await page.textContent('#orig')).split('כותרת מצולמת').length !== 2) throw new Error('correction not applied (page 3 keeps its own heading)');
+  const fixed = await page.locator('#orig p', { hasText: 'הוראה מתוקנת' }).locator('span').first().getAttribute('style');
+  if (!/font-size:11pt/.test(fixed)) throw new Error('size lost after a fix: ' + fixed);
+  if (await page.locator('#orig p', { hasText: 'הוראה מתוקנת' }).filter({ hasText: 'בְּרֵאשִׁ' }).count()) throw new Error('Enter did not split the paragraph');
+  if ((await shots()) !== 2) throw new Error('photos: ' + await shots());   // the failed page left empty is dropped with its photo
   await page.waitForFunction(() => document.querySelectorAll('#result .page').length > 0, null, { timeout: 20000 });
-  await read([png, png, png], true, 5);                           // 200, 429 → stops, third photo not sent
-  if (calls !== 5) throw new Error('batch did not stop on quota: ' + calls);
-  if ((await page.locator('#orig .shots img').count()) !== 3) throw new Error('append lost photos');
-  if (!(await page.locator('#orig .shots img').first().evaluate((i) => i.complete && i.naturalWidth > 0))) throw new Error('earlier photo revoked');
+  await read([png]);                                            // cancel throws the reading away, the book stays
+  page.once('dialog', (d) => d.accept());
+  await page.click('#rv [data-a="drop"]');
+  if ((await shots()) !== 2 || !/כותרת מתוקנת/.test(await page.textContent('#orig'))) throw new Error('cancel changed the book');
+  await read([png, png, png], true);                            // 200, 429 → stops, third photo not sent
+  if (calls !== 6) throw new Error('batch did not stop on quota: ' + calls);
+  page.once('dialog', (d) => d.accept());
+  await page.click('#rv button[value="ok"]');
   await page.waitForFunction(() => /בדיקה 429/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+  if ((await shots()) !== 3) throw new Error('append lost photos');
+  if (!(await page.locator('#orig .shots img').first().evaluate((i) => i.complete && i.naturalWidth > 0))) throw new Error('earlier photo revoked');
   await page.unroute('**/functions/v1/page-ocr');
 });
 await page.screenshot({ path: path.join(OUT, 'app.png') });
