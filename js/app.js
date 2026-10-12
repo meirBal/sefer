@@ -8,6 +8,7 @@ import { stretchPage, stretchHTML } from './stretch.js';
 import { fontInfo as fileInfo, canQueryLocal, localFonts, dataUrlBytes } from './fontfile.js';
 import { splitPlan, chapterPlan, esc } from './text.js';
 import { find, mark, clear, queryLength } from './search.js';
+import { readPage } from './ocr.js';
 
 const $ = (id) => document.getElementById(id);
 const OVER = () => ({ r: {}, c: {}, l: {}, h: {} });
@@ -166,26 +167,81 @@ function renderOrig() {
   const lost = [info.notes && `${info.notes} הערות שוליים`, info.lists && `${info.lists} פסקאות ממוספרות (המספור לא נשמר)`, info.boxes && 'תיבות טקסט']
     .filter(Boolean).join(', ');
   $('origInfo').textContent = `${paras.length} פסקאות · ${words} מילים · גודל עיקרי ${bodySz}pt${lost ? ' · ⚠ לא מועבר: ' + lost : ''}`;
-  $('orig').innerHTML = paras.map((p, i) => p.empty ? `<p data-s="${i}">&nbsp;</p>`
+  const pics = (st.photos || []).map((u, i) => `<a href="${u.full}" target="_blank" rel="noopener" title="צילום ${i + 1} בגודל מלא"><img src="${u.thumb}" alt="צילום ${i + 1}"></a>`).join('');
+  $('orig').innerHTML = (pics ? `<div class="shots">${pics}<p class="hint">לבדיקה: השוו את הטקסט לצילום (נגיעה בתמונה מגדילה, נגיעה בפסקה מתקנת)</p></div>` : '') + paras.map((p, i) => p.empty ? `<p data-s="${i}">&nbsp;</p>`
     : `<p data-s="${i}" class="${p.h ? 'h' : ''}" style="${p.center ? 'text-align:center' : ''}">${p.runs.map((r) =>
       `<span style="font-size:${r.sz}pt${r.b ? ';font-weight:700' : ''}">${esc(r.t).replace(/\n/g, '<br>')}</span>`).join('')}</p>`).join('');
+}
+// keep = text appended to the loaded document: manual layout edits stay.
+function loadDoc(doc, name, photos = [], keep = false) {
+  if (!doc.paras.some((p) => !p.empty)) throw new Error('הקובץ ריק — אין בו טקסט');
+  for (const ph of st.photos || []) if (!photos.includes(ph)) { URL.revokeObjectURL(ph.full); URL.revokeObjectURL(ph.thumb); }
+  Object.assign(st, { doc, name, photos, undo: null }, keep ? {} : { blanks: {}, over: OVER(), L: null, pages: [] });
+  $('exName').value = st.name; $('undo').hidden = true;
+  resetSearch();
+  renderOrig();
+  $('result').innerHTML = '<p class="hint">לחצו "בצע".</p>';
+  $('run').disabled = false; $('save').disabled = true;
 }
 $('file').addEventListener('change', async (e) => {
   const file = e.target.files[0]; if (!file) return;
   st.busy++;                                               // a layout still running belongs to the old file
   say('קורא…');
   try {
-    const doc = await readFile(file);
-    if (!doc.paras.some((p) => !p.empty)) throw new Error('הקובץ ריק — אין בו טקסט');
-    Object.assign(st, { doc, name: file.name.replace(/\.\w+$/, ''), blanks: {}, over: OVER(), L: null, pages: [], undo: null });
-    $('exName').value = st.name; $('undo').hidden = true;
-    resetSearch();
-    renderOrig();
-    $('result').innerHTML = '<p class="hint">לחצו "בצע".</p>';
-    $('run').disabled = false; $('save').disabled = true;
+    loadDoc(await readFile(file), file.name.replace(/\.\w+$/, ''));
     say(`נטען: ${file.name}`);
   } catch (err) { say(err.message || 'שגיאה בקריאת הקובץ', true); $('run').disabled = !st.doc; }
   e.target.value = '';
+});
+
+// ----- [3b] PHOTOS → TEXT: each photo is read by the free AI server; the photos stay beside the text for checking -----
+let shots = [], reading = null;                                // reading = AbortController of the batch in progress
+const setReading = (ctl) => { reading = ctl; $('file').disabled = $('photo').disabled = !!ctl; $('phStop').hidden = !ctl; };
+const note = (t) => ({ runs: [{ t, sz: 14, b: true }], h: 0, center: false, brk: false, empty: false });
+$('phStop').addEventListener('click', () => reading?.abort());
+$('photo').addEventListener('change', (e) => {
+  shots = [...e.target.files].filter((f) => !f.type || f.type.startsWith('image/')); e.target.value = '';
+  if (!shots.length) return say('לא נבחרה תמונה', true);
+  $('phCount').textContent = shots.length === 1 ? 'תמונה אחת' : `${shots.length} תמונות`;
+  $('phAppend').closest('label').hidden = !st.doc;
+  $('ph').returnValue = ''; $('ph').showModal();
+});
+$('ph').addEventListener('close', async () => {
+  const files = shots; shots = [];
+  if ($('ph').returnValue !== 'ok' || !files.length) return;
+  const newPage = $('phBreak').checked, append = !!st.doc && $('phAppend').checked, ctl = new AbortController();
+  const added = [], photos = [], failed = [];
+  let stop = '';
+  setReading(ctl); st.busy++; $('run').disabled = true;
+  for (const [i, f] of files.entries()) {
+    say(`קורא דף ${i + 1} מתוך ${files.length}… (חצי דקה עד שתי דקות לדף)`);
+    let page;
+    try {
+      const r = await readPage(f, ctl.signal);
+      photos.push({ full: URL.createObjectURL(r.full), thumb: URL.createObjectURL(r.thumb) });
+      page = r.paras;
+    } catch (err) {
+      if (ctl.signal.aborted) { stop = 'הקריאה הופסקה'; break; }
+      failed.push(i + 1);
+      page = [note(`⚠ דף ${i + 1} לא נקרא: ${err.message}`)];  // visible gap in the text, so nothing is silently missing
+      if ([0, 403, 429, 502, 503].includes(err.status)) stop = err.message;   // no network / quota / busy: the next pages would fail too
+    }
+    if (newPage && (added.length || append)) page[0].brk = true;
+    added.push(...page);
+    if (stop) break;
+  }
+  setReading(null);
+  const rest = stop && files.length > failed.length + photos.length ? ` · דפים שלא נקראו: ${files.length - failed.length - photos.length}` : '';
+  if (!photos.length) { say(`לא נקרא אף דף: ${stop || failed.length + ' נכשלו'}`, true); $('run').disabled = !st.doc; return; }
+  const count = {};                                            // main text size = most common by characters
+  for (const p of added) if (!p.h) for (const r of p.runs) count[r.sz] = (count[r.sz] || 0) + r.t.length;
+  const doc = append                                           // st.doc read now: edits made while reading are kept
+    ? { ...st.doc, paras: [...st.doc.paras, ...added] }
+    : { paras: added, bodySz: +(Object.entries(count).sort((x, y) => y[1] - x[1])[0]?.[0] || 14), info: { notes: 0, lists: 0, boxes: 0 } };
+  loadDoc(doc, append ? st.name : 'צילומים', [...(append ? st.photos : []), ...photos], append);
+  await run();                                                 // the message comes after: the layout clears the status line
+  say(failed.length || stop ? `⚠ ${stop || 'חלק מהדפים לא נקראו'}${failed.length ? ` · דפים שנכשלו: ${failed.join(', ')}` : ''}${rest}`
+    : '✓ נקרא. בדקו את הטקסט מול הצילום — נגיעה בפסקה לתיקון', !!(failed.length || stop));
 });
 
 // ----- [4] RUN: snapshot settings → prepare → paginate (measured) → remap edits → draw. Stale runs are dropped. -----

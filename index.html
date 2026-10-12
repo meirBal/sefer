@@ -18,6 +18,8 @@
 <header class="bar">
   <h1>עימוד ספר <small id="ver"></small></h1>
   <label class="btn">📄 בחירת קובץ Word<input id="file" type="file" accept=".docx,.txt" hidden></label>
+  <label class="btn">📷 צילום דף<input id="photo" type="file" accept="image/*" multiple hidden></label>
+  <button id="phStop" type="button" class="btn" hidden>⏹ עצירת הקריאה</button>
   <button id="run" class="primary" disabled>בצע ◀</button>
   <button id="save" disabled>💾 שמירה / הדפסה</button>
   <button id="undo" hidden title="ביטול עריכת הטקסט האחרונה">↶ בטל עריכה</button>
@@ -135,6 +137,15 @@
   <p class="hint">Word נשמר תמיד עמוד אחרי עמוד, והפונט חייב להיות מותקן במחשב. לבית דפוס: PDF באיכות "לבית דפוס", או הדפסה ← שמירה כ-PDF (טקסט וקטורי).</p>
   <div class="row"><button type="button" id="exTest">🧪 דף בדיקה להדפסה דו-צדדית</button></div>
   <div class="row end"><button value="close">סגירה</button><button type="button" id="exWord">הורדת Word</button><button type="button" id="exPdf" class="primary">הורדת PDF</button></div>
+</form></dialog>
+
+<!-- ===== DIALOG: photos → text ===== -->
+<dialog id="ph"><form method="dialog">
+  <h3>קריאת טקסט מצילום — <span id="phCount"></span></h3>
+  <p class="hint">הטקסט נקרא בשירות AI חינמי (חצי דקה עד שתי דקות לדף), עם ניקוד ככל שמופיע בדף. צילום ישר, חד ומואר נותן תוצאה טובה יותר. אחרי הקריאה כדאי לעבור על הטקסט מול הצילום.</p>
+  <label class="chk"><input id="phBreak" type="checkbox"> כל צילום מתחיל בעמוד חדש (דפים נפרדים)</label>
+  <label class="chk" hidden><input id="phAppend" type="checkbox"> להוסיף אחרי הטקסט שכבר טעון</label>
+  <div class="row end"><button value="cancel" formnovalidate>ביטול</button><button value="ok" class="primary">קריאה</button></div>
 </form></dialog>
 
 <!-- ===== DIALOG: name of an added font file ===== -->

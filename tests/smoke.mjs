@@ -38,7 +38,7 @@ const errors = [];
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' }).catch(() => chromium.launch());
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text()));
+page.on('console', (m) => m.type() === 'error' && !/status of 4\d\d/.test(m.text()) && errors.push('console: ' + m.text()));   // mocked server errors are expected
 await page.route('**/fonts.googleapis.com/**', (r) => r.abort());
 const step = async (name, fn) => { try { await fn(); console.log('✓', name); } catch (e) { errors.push(`${name}: ${e.message.split('\n')[0]}`); console.log('✗', name); } };
 const pick = async (k, v) => page.locator(`[data-k="${k}"]`).selectOption(v);
@@ -269,6 +269,36 @@ await step('add a font file: Word name read from the file, kept in the app, embe
   await page.click('#ex button[value="close"]');
   const z = await (await import('jszip')).default.loadAsync(fs.readFileSync(path.join(OUT, 'embed.docx')));
   if (!z.file('word/fonts/font1.odttf') || !/embedRegular/.test(await z.file('word/fontTable.xml').async('string'))) throw new Error('font not embedded');
+});
+await step('photos → text (mocked server): thumbnails, failed page marked, append keeps photos, quota stops the batch', async () => {
+  const png = path.join(OUT, 'shot.png');
+  fs.writeFileSync(png, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+  const replies = [200, 422, 200, 200, 429, 200];               // one server answer per call, in order
+  let calls = 0;
+  await page.route('**/functions/v1/page-ocr', (r) => {
+    const code = replies[calls++];
+    r.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(code === 200 ? { paras: [
+      { runs: [{ t: 'כותרת מצולמת', size: 'large' }], heading: 1, center: true },
+      { runs: [{ t: 'הוראה קטנה ', size: 'small' }, { t: verse.repeat(4), size: 'normal' }] }] } : { error: 'בדיקה ' + code }) });
+  });
+  const read = async (files, append, until) => {
+    await page.setInputFiles('#photo', files);
+    await page.waitForFunction(() => document.querySelector('#ph').open);
+    if (append) await page.locator('#phAppend').check();
+    await page.click('#ph button[value="ok"]');
+    for (let i = 0; calls < until && i < 200; i++) await page.waitForTimeout(50);
+    await page.waitForFunction(() => !document.querySelector('#photo').disabled, null, { timeout: 20000 });
+  };
+  await read([png, png, png], false, 3);
+  if (calls !== 3 || (await page.locator('#orig .shots img').count()) !== 2) throw new Error('first batch');
+  if (!/דף 2 לא נקרא/.test(await page.textContent('#orig'))) throw new Error('failed page not marked in the text');
+  await page.waitForFunction(() => document.querySelectorAll('#result .page').length > 0, null, { timeout: 20000 });
+  await read([png, png, png], true, 5);                           // 200, 429 → stops, third photo not sent
+  if (calls !== 5) throw new Error('batch did not stop on quota: ' + calls);
+  if ((await page.locator('#orig .shots img').count()) !== 3) throw new Error('append lost photos');
+  if (!(await page.locator('#orig .shots img').first().evaluate((i) => i.complete && i.naturalWidth > 0))) throw new Error('earlier photo revoked');
+  await page.waitForFunction(() => /בדיקה 429/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+  await page.unroute('**/functions/v1/page-ocr');
 });
 await page.screenshot({ path: path.join(OUT, 'app.png') });
 fs.writeFileSync(path.join(OUT, 'pages.txt'), String(pages));
