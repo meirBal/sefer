@@ -72,7 +72,7 @@ async function handle(req: Request, json: (b: unknown, s?: number) => Response) 
     for (let retry = 0; retry < 2 && left() > 15_000; retry++) {
       if (retry) await new Promise((ok) => setTimeout(ok, 2500));
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST', signal: AbortSignal.timeout(Math.min(left(), model.includes('pro') ? 50_000 : 45_000)),
+        method: 'POST', signal: AbortSignal.timeout(Math.min(left(), model.includes('lite') ? 45_000 : model.includes('pro') ? 50_000 : 65_000)),
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body,
       }).catch(() => undefined);
       status = r?.status ?? 0;
