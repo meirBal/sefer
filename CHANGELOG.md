@@ -1,3 +1,7 @@
+## 2.3.0 — 2026-10-12
+- צילום דף → טקסט: קריאת דפים מודפסים בשירות AI חינמי, תמונות לבדיקה מעל הטקסט, עצירה, דף שנכשל מסומן
+- previous: v2.2.1 (rollback: scripts/rollback.sh 2.2.1)
+
 ## 2.2.1 — 2026-10-09
 - Missing-font guidance corrected: Office fonts are used on the computer they came with and travel inside the Word/PDF files you make; copying the font file to other devices needs an extended licence
 - previous: v2.2.0 (rollback: scripts/rollback.sh 2.2.0)
